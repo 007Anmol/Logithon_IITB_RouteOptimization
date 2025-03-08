@@ -1,101 +1,141 @@
-import Image from "next/image";
+"use client";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { CsvUploadForm } from "@/components/csv-upload-form"
+import { ShipmentForm } from "@/components/shipment-form"
+import { Ship, FileSpreadsheet } from "lucide-react"
+import { HeroSection } from "@/components/hero-section"
+import { motion } from "framer-motion"
+import { SetStateAction, useState } from "react"
 
-export default function Home() {
+const Home = () => {
+  const [activeTab, setActiveTab] = useState("batch")
+  
+  const handleValueChange = (value: SetStateAction<string>) => {
+    setActiveTab(value)
+  }
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+    <div className="flex min-h-screen flex-col">
+      <HeroSection/>
+      <section className="container py-12 bg-[#020617] md:py-16 lg:py-20">
+        <Tabs defaultValue="batch" className="mx-auto max-w-4xl" onValueChange={handleValueChange}>
+          <TabsList className="grid w-full grid-cols-2 p-1.5 rounded-full bg-white/5 backdrop-blur-sm border border-white/10 shadow-lg">
+            <motion.div
+              whileHover={{ scale: activeTab === "batch" ? 1 : 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              className="w-full"
+            >
+              <TabsTrigger
+                value="batch"
+                className={`
+                  relative flex items-center justify-center gap-2 rounded-full py-3 w-full
+                  transition-all duration-200 ease-out overflow-hidden
+                  ${activeTab === "batch" 
+                    ? "text-white shadow-inner bg-gradient-to-br from-blue-600/20 to-indigo-600/20" 
+                    : "text-blue-200/80 hover:text-white"}
+                `}
+              >
+                {/* Pseudo-3D effect for pressed state */}
+                <div className={`
+                  absolute inset-0 rounded-full transition-opacity duration-200
+                  bg-gradient-to-br from-blue-900/50 to-indigo-900/50 border border-white/5
+                  ${activeTab === "batch" ? 'opacity-100' : 'opacity-0'}
+                `} />
+                
+                {/* Subtle glow effect when active */}
+                {activeTab === "batch" && (
+                  <div className="absolute inset-0 rounded-full bg-blue-500/10 blur-md" />
+                )}
+                
+                {/* Content */}
+                <div className="relative flex items-center gap-2">
+                  <FileSpreadsheet className="h-4 w-4" />
+                  <span>Batch Upload</span>
+                </div>
+              </TabsTrigger>
+            </motion.div>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            <motion.div
+              whileHover={{ scale: activeTab === "single" ? 1 : 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              className="w-full"
+            >
+              <TabsTrigger
+                value="single"
+                className={`
+                  relative flex items-center justify-center gap-2 rounded-full py-3 w-full
+                  transition-all duration-200 ease-out overflow-hidden
+                  ${activeTab === "single" 
+                    ? "text-white shadow-inner bg-gradient-to-br from-blue-600/20 to-indigo-600/20" 
+                    : "text-blue-200/80 hover:text-white"}
+                `}
+              >
+                {/* Pseudo-3D effect for pressed state */}
+                <div className={`
+                  absolute inset-0 rounded-full transition-opacity duration-200
+                  bg-gradient-to-br from-blue-900/50 to-indigo-900/50 border border-white/5
+                  ${activeTab === "single" ? 'opacity-100' : 'opacity-0'}
+                `} />
+                
+                {/* Subtle glow effect when active */}
+                {activeTab === "single" && (
+                  <div className="absolute inset-0 rounded-full bg-blue-500/10 blur-md" />
+                )}
+                
+                {/* Content */}
+                <div className="relative flex items-center gap-2">
+                  <Ship className="h-4 w-4" />
+                  <span>Single Shipment</span>
+                </div>
+              </TabsTrigger>
+            </motion.div>
+          </TabsList>
+          
+          <TabsContent 
+            value="batch" 
+            className="mt-8 border border-white/10 bg-white/5 backdrop-blur-sm rounded-xl p-6 text-white shadow-lg"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+            >
+              <h3 className="text-2xl font-semibold mb-4">Upload Shipment Batch</h3>
+              <p className="mb-6 text-blue-200/70">
+                Upload a CSV file with multiple shipments to get optimized routes and clusters.
+              </p>
+              <CsvUploadForm/>
+            </motion.div>
+          </TabsContent>
+          
+          <TabsContent 
+            value="single" 
+            className="mt-8 border border-white/10 bg-white/5 backdrop-blur-sm rounded-xl p-6 text-white shadow-lg"
           >
-            Read our docs
-          </a>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+            >
+              <h3 className="text-2xl font-semibold mb-4">Enter Shipment Details</h3>
+              <p className="mb-6 text-blue-200/70">
+                Enter details for a single shipment to get 7 possible route options.
+              </p>
+              <ShipmentForm/>
+            </motion.div>
+          </TabsContent>
+        </Tabs>
+      </section>
+
+      <footer className="border-t border-white/10 py-6 bg-[#020617] text-white">
+        <div className="container text-center text-sm text-blue-200/60">
+          &copy; {new Date().getFullYear()} CargoRoute Optimizer. All rights reserved.
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
       </footer>
     </div>
-  );
+  )
 }
+
+export default Home;
