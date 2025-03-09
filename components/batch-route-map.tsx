@@ -65,15 +65,9 @@ const Tooltip = dynamic(
   { ssr: false }
 );
 
-const LayersControl = dynamic(
-  () => import("react-leaflet").then((mod) => mod.LayersControl),
-  { ssr: false }
-);
+import {LayersControl} from "react-leaflet"
 
-const useMap = dynamic(
-  () => import("react-leaflet").then((mod) => mod.useMap),
-  { ssr: false }
-);
+import { useMap } from "react-leaflet"
 
 // Type for location info
 interface LocationInfo {
