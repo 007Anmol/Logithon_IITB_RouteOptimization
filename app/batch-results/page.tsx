@@ -1,5 +1,4 @@
 "use client"
-
 import { FC, useState, useEffect } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { motion } from "framer-motion"
@@ -10,7 +9,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { BatchRouteMap } from ""
+import { BatchRouteMap } from "@/components/batch-route-map"
 import { 
   BatchOptimizationResult, 
   OptimizedRoute,
@@ -551,7 +550,7 @@ const BatchResultsPage: FC = () => {
                       return (
                         <motion.div
                           key={route.id}
-                          className={rounded-lg border ${selectedRouteId === route.id ? 'border-blue-500/50' : 'border-white/10'} bg-white/5 p-4 cursor-pointer}
+                          className={`rounded-lg border ${selectedRouteId === route.id ? 'border-blue-500/50' : 'border-white/10'} bg-white/5 p-4 cursor-pointer`}
                           whileHover={{ y: -2, boxShadow: "0 4px 20px rgba(0, 0, 0, 0.15)" }}
                           onClick={() => handleSelectRoute(route.id)}
                         >
