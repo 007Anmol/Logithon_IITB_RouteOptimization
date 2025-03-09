@@ -1,6 +1,6 @@
 "use client"
 
-import { FC, useState, useEffect, useRef } from "react"
+import { FC, useState, useEffect, useRef, ReactNode } from "react"
 import dynamic from "next/dynamic"
 import L from "leaflet"
 import { 
@@ -70,7 +70,16 @@ const LayersControl = dynamic(
   { ssr: false }
 );
 
-import { useMap } from "react-leaflet"
+const useMap = dynamic(
+  () => import("react-leaflet").then((mod) => mod.useMap),
+  { ssr: false }
+);
+
+// Type for location info
+interface LocationInfo {
+  type: "origin" | "destination" | "hub";
+  count: number;
+}
 
 interface BatchRouteMapProps {
   optimizationResult: BatchOptimizationResult;
@@ -85,12 +94,26 @@ interface SetMapViewProps {
   zoom?: number;
 }
 
+// Type for PolyLine event handlers
+interface PolylineEventHandlers {
+  click: () => void;
+  mouseover: (e: { target: { setStyle: (style: Partial<RouteStyle>) => void } }) => void;
+  mouseout: (e: { target: { setStyle: (style: Partial<RouteStyle>) => void } }) => void;
+}
+
+// Helper component for LayersGroup (since we're dynamically importing)
+const LayersGroup: FC<{ children: React.ReactNode }> = ({ children }) => {
+  return <>{children}</>;
+};
+
 const SetMapView: FC<SetMapViewProps> = ({ bounds, center, zoom = 3 }) => {
   const map = useMap();
   
   useEffect(() => {
+    if (!map) return;
+    
     if (bounds) {
-      map.fitBounds(bounds as L.LatLngBoundsExpression);
+      map.fitBounds(bounds);
     } else if (center) {
       map.setView([center.lat, center.lng], zoom);
     }
@@ -100,8 +123,8 @@ const SetMapView: FC<SetMapViewProps> = ({ bounds, center, zoom = 3 }) => {
 };
 
 // Custom icon for markers
-const createCustomIcon = (type: string, color: string) => {
-  const getIconHtml = () => {
+const createCustomIcon = (type: string, color: string): L.DivIcon => {
+  const getIconHtml = (): string => {
     switch (type) {
       case 'origin':
         return `<div class="custom-marker origin-marker" style="background-color: ${color};">
@@ -155,9 +178,9 @@ const getRouteStyle = (
 ): RouteStyle => {
   // Base style
   const style: RouteStyle = {
-      weight: isSelected ? 5 : 3,
-      opacity: isSelected ? 1 : 0.7,
-      color: ""
+    weight: isSelected ? 5 : 3,
+    opacity: isSelected ? 1 : 0.7,
+    color: "#8b5cf6", // Default purple
   };
 
   // Color by mode
@@ -185,10 +208,6 @@ const getRouteStyle = (
     } else {
       style.color = "#ef4444"; // red - less efficient
     }
-  } 
-  // Default color
-  else {
-    style.color = "#8b5cf6"; // Default purple
   }
 
   // Style for multi-modal
@@ -205,7 +224,7 @@ const getRouteStyle = (
 };
 
 // Get icon and color for transport mode
-const getTransportModeInfo = (mode: TransportMode): { icon: React.ReactNode; color: string } => {
+const getTransportModeInfo = (mode: TransportMode): { icon: ReactNode; color: string } => {
   switch (mode) {
     case "truck":
       return { icon: <Truck className="h-4 w-4" />, color: "#3b82f6" };
@@ -215,6 +234,24 @@ const getTransportModeInfo = (mode: TransportMode): { icon: React.ReactNode; col
       return { icon: <Ship className="h-4 w-4" />, color: "#10b981" };
     default:
       return { icon: <Package className="h-4 w-4" />, color: "#6b7280" };
+  }
+};
+
+// Helper to safely call map methods
+const safelyZoomMap = (action: 'zoomIn' | 'zoomOut'): void => {
+  if (typeof window === 'undefined') return;
+  
+  const mapElement = document.querySelector('.leaflet-container');
+  if (!mapElement) return;
+  
+  // Access the map instance safely
+  const map = (mapElement as any)._leaflet_map;
+  if (!map) return;
+  
+  if (action === 'zoomIn') {
+    map.zoomIn();
+  } else {
+    map.zoomOut();
   }
 };
 
@@ -248,7 +285,6 @@ export const BatchRouteMap: FC<BatchRouteMapProps> = ({
       
       optimizationResult.routes.forEach(route => {
         route.segments.forEach(segment => {
-          // Get coordinates for from and to (would need a helper in real implementation)
           const fromCoords = getLocationCoordinates(segment.from);
           const toCoords = getLocationCoordinates(segment.to);
           
@@ -264,7 +300,7 @@ export const BatchRouteMap: FC<BatchRouteMapProps> = ({
   }, [optimizationResult]);
   
   // Handle route selection
-  const handleSelectRoute = (routeId: string) => {
+  const handleSelectRoute = (routeId: string): void => {
     setSelectedRoute(prev => prev === routeId ? null : routeId);
     
     if (onSelectRoute) {
@@ -362,7 +398,8 @@ export const BatchRouteMap: FC<BatchRouteMapProps> = ({
     }
     
     // Extract city name and try to match
-    const city = location.split(',')[0].trim();
+    const cityParts = location.split(',');
+    const city = cityParts.length > 0 ? cityParts[0].trim() : location;
     for (const loc of locations) {
       if (loc.includes(city)) {
         return locationCoords[loc];
@@ -408,6 +445,57 @@ export const BatchRouteMap: FC<BatchRouteMapProps> = ({
     }
     
     return points;
+  };
+  
+  // Generate all locations data
+  const generateLocationsData = (): Record<string, LocationInfo> => {
+    const locations: Record<string, LocationInfo> = {};
+    
+    optimizationResult.routes.forEach(route => {
+      route.segments.forEach((segment, idx) => {
+        // First segment from is origin
+        if (idx === 0) {
+          if (!locations[segment.from]) {
+            locations[segment.from] = { type: "origin", count: 1 };
+          } else {
+            locations[segment.from].count++;
+            // Keep as origin if already marked as such
+            if (locations[segment.from].type !== "origin") {
+              locations[segment.from].type = "hub";
+            }
+          }
+        } else {
+          // Middle segments are hubs
+          if (!locations[segment.from]) {
+            locations[segment.from] = { type: "hub", count: 1 };
+          } else {
+            locations[segment.from].count++;
+          }
+        }
+        
+        // Last segment to is destination
+        if (idx === route.segments.length - 1) {
+          if (!locations[segment.to]) {
+            locations[segment.to] = { type: "destination", count: 1 };
+          } else {
+            locations[segment.to].count++;
+            // Keep as destination if already marked as such
+            if (locations[segment.to].type !== "destination") {
+              locations[segment.to].type = "hub";
+            }
+          }
+        } else {
+          // Middle segments are hubs
+          if (!locations[segment.to]) {
+            locations[segment.to] = { type: "hub", count: 1 };
+          } else {
+            locations[segment.to].count++;
+          }
+        }
+      });
+    });
+    
+    return locations;
   };
   
   if (!optimizationResult || optimizationResult.routes.length === 0) {
@@ -473,272 +561,230 @@ export const BatchRouteMap: FC<BatchRouteMapProps> = ({
   const multiModalCount = optimizationResult.routes.filter(r => r.isMultiModal).length;
   const backhaulCount = optimizationResult.routes.filter(r => r.hasBackhaul).length;
   
+  // Generate locations data for markers
+  const locationsData = generateLocationsData();
+  
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Map container */}
       <div className="lg:col-span-2 relative">
         <div className="h-[600px] rounded-xl overflow-hidden border border-white/10 shadow-lg">
           {typeof window !== 'undefined' && (
-            <><MapContainer
-                          key={mapKey}
-                          center={[mapCenter.lat, mapCenter.lng]}
-                          zoom={2}
-                          style={{ height: '100%', width: '100%' }}
-                          zoomControl={false}
-                      >
-                          <TileLayer
-                              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-
-                          {/* Add map layers for different transport modes */}
-                          <LayersControl position="topright">
-                              <LayersControl.Overlay checked name="Truck Routes">
-                                  <LayersControl.Group>
-                                      {optimizationResult.routes.map((route) => {
-                                          const isSelected = selectedRoute === route.id
-
-                                          // Skip non-truck routes
-                                          if (!route.segments.some(s => s.mode === "truck")) {
-                                              return null
-                                          }
-
-                                          return route.segments.map((segment, idx) => {
-                                              if (segment.mode !== "truck") return null
-
-                                              const fromCoords = getLocationCoordinates(segment.from)
-                                              const toCoords = getLocationCoordinates(segment.to)
-
-                                              if (!fromCoords || !toCoords) return null
-
-                                              const curvedPath = createCurvedPath(fromCoords, toCoords, 0.2)
-                                              const style = getRouteStyle(route, segment, mapOptions, isSelected)
-
-                                              return (
-                                                  <Polyline
-                                                      key={$} {...route.id} /> - segment - $); { idx} 
-                                          },
-                                              positions = { curvedPath },
-                                              pathOptions = { style },
-                                              eventHandlers = {}, {
-                                              click: () => handleSelectRoute(route.id),
-                                              mouseover: (e) => {
-                                                  e.target.setStyle({ weight: style.weight + 2 })
-                                              },
-                                              mouseout: (e) => {
-                                                  e.target.setStyle({ weight: style.weight })
-                                              }
-                                          })
-                                      },
-                                          >
-                                          <Tooltip sticky>
-                                              <div className="text-xs">
-                                                  <strong>{segment.from} → {segment.to}</strong><br />
-                                                  Distance: {segment.distance} km<br />
-                                                  Mode: {segment.mode.charAt(0).toUpperCase() + segment.mode.slice(1)}<br />
-                                                  Cost: ${segment.cost.toLocaleString()}
-                                              </div>
-                                          </Tooltip>)}
-                                  </Polyline>
-                                  );
-                                  });
-                                  })}
-                              </LayersGroup>
-                          </LayersControl.Overlay>
-
-                          <LayersControl.Overlay checked name="Air Routes">
-                              <LayersGroup>
-                                  {optimizationResult.routes.map((route) => {
-                                      const isSelected = selectedRoute === route.id
-
-                                      // Skip non-air routes
-                                      if (!route.segments.some(s => s.mode === "plane")) {
-                                          return null
-                                      }
-
-                                      return route.segments.map((segment, idx) => {
-                                          if (segment.mode !== "plane") return null
-
-                                          const fromCoords = getLocationCoordinates(segment.from)
-                                          const toCoords = getLocationCoordinates(segment.to)
-
-                                          if (!fromCoords || !toCoords) return null
-
-                                          const curvedPath = createCurvedPath(fromCoords, toCoords, 0.5)
-                                          const style = getRouteStyle(route, segment, mapOptions, isSelected)
-
-                                          return (
-                                              <Polyline
-                                                  key={$} {...route.id} /> - segment - $); { idx} 
-                                      },
-                                          positions = { curvedPath },
-                                          pathOptions = { style },
-                                          eventHandlers = {}, {
-                                          click: () => handleSelectRoute(route.id),
-                                          mouseover: (e) => {
-                                              e.target.setStyle({ weight: style.weight + 2 })
-                                          },
-                                          mouseout: (e) => {
-                                              e.target.setStyle({ weight: style.weight })
-                                          }
-                                      })
-                                  },
-                                      >
-                                      <Tooltip sticky>
-                                          <div className="text-xs">
-                                              <strong>{segment.from} → {segment.to}</strong><br />
-                                              Distance: {segment.distance} km<br />
-                                              Mode: {segment.mode.charAt(0).toUpperCase() + segment.mode.slice(1)}<br />
-                                              Cost: ${segment.cost.toLocaleString()}
-                                          </div>
-                                      </Tooltip>)}
-                              </Polyline>
-                              );
-                              });
-                              })}
-                          </LayersGroup>
-                      </LayersControl.Overlay><LayersControl.Overlay checked name="Sea Routes">
-                              <LayersGroup>
-                                  {optimizationResult.routes.map((route) => {
-                                      const isSelected = selectedRoute === route.id
-
-                                      // Skip non-sea routes
-                                      if (!route.segments.some(s => s.mode === "ship")) {
-                                          return null
-                                      }
-
-                                      return route.segments.map((segment, idx) => {
-                                          if (segment.mode !== "ship") return null
-
-                                          const fromCoords = getLocationCoordinates(segment.from)
-                                          const toCoords = getLocationCoordinates(segment.to)
-
-                                          if (!fromCoords || !toCoords) return null
-
-                                          const curvedPath = createCurvedPath(fromCoords, toCoords, -0.3)
-                                          const style = getRouteStyle(route, segment, mapOptions, isSelected)
-
-                                          return (
-                                              <Polyline
-                                                  key={$} {...route.id} /> - segment - $); { idx} 
-                                      },
-                                          positions = { curvedPath },
-                                          pathOptions = { style },
-                                          eventHandlers = {}, {
-                                          click: () => handleSelectRoute(route.id),
-                                          mouseover: (e) => {
-                                              e.target.setStyle({ weight: style.weight + 2 })
-                                          },
-                                          mouseout: (e) => {
-                                              e.target.setStyle({ weight: style.weight })
-                                          }
-                                      })
-                                  },
-                                      >
-                                      <Tooltip sticky>
-                                          <div className="text-xs">
-                                              <strong>{segment.from} → {segment.to}</strong><br />
-                                              Distance: {segment.distance} km<br />
-                                              Mode: {segment.mode.charAt(0).toUpperCase() + segment.mode.slice(1)}<br />
-                                              Cost: ${segment.cost.toLocaleString()}
-                                          </div>
-                                      </Tooltip>)}
-                              </Polyline>
-                              );
-                              });
-                              })}
-                          </LayersGroup></>
+            <MapContainer 
+              key={mapKey}
+              center={[mapCenter.lat, mapCenter.lng]} 
+              zoom={2} 
+              style={{ height: '100%', width: '100%' }}
+              zoomControl={false}
+            >
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              
+              {/* Add map layers for different transport modes */}
+              <LayersControl position="topright">
+                <LayersControl.Overlay checked name="Truck Routes">
+                  <LayersGroup>
+                    {optimizationResult.routes.map((route) => {
+                      const isSelected = selectedRoute === route.id;
+                      
+                      // Skip non-truck routes
+                      if (!route.segments.some(s => s.mode === "truck")) {
+                        return null;
+                      }
+                      
+                      return route.segments.map((segment, idx) => {
+                        if (segment.mode !== "truck") return null;
+                        
+                        const fromCoords = getLocationCoordinates(segment.from);
+                        const toCoords = getLocationCoordinates(segment.to);
+                        
+                        if (!fromCoords || !toCoords) return null;
+                        
+                        const curvedPath = createCurvedPath(fromCoords, toCoords, 0.2);
+                        const style = getRouteStyle(route, segment, mapOptions, isSelected);
+                        
+                        const eventHandlers: PolylineEventHandlers = {
+                          click: () => handleSelectRoute(route.id),
+                          mouseover: (e) => {
+                            e.target.setStyle({ weight: style.weight + 2 });
+                          },
+                          mouseout: (e) => {
+                            e.target.setStyle({ weight: style.weight });
+                          }
+                        };
+                        
+                        return (
+                          <Polyline 
+                            key={`${route.id}-segment-${idx}`}
+                            positions={curvedPath}
+                            pathOptions={style}
+                            eventHandlers={eventHandlers}
+                          >
+                            <Tooltip sticky>
+                              <div className="text-xs">
+                                <strong>{segment.from} → {segment.to}</strong><br />
+                                Distance: {segment.distance} km<br />
+                                Mode: {segment.mode.charAt(0).toUpperCase() + segment.mode.slice(1)}<br />
+                                Cost: ${segment.cost.toLocaleString()}
+                              </div>
+                            </Tooltip>
+                          </Polyline>
+                        );
+                      });
+                    })}
+                  </LayersGroup>
+                </LayersControl.Overlay>
+                
+                <LayersControl.Overlay checked name="Air Routes">
+                  <LayersGroup>
+                    {optimizationResult.routes.map((route) => {
+                      const isSelected = selectedRoute === route.id;
+                      
+                      // Skip non-air routes
+                      if (!route.segments.some(s => s.mode === "plane")) {
+                        return null;
+                      }
+                      
+                      return route.segments.map((segment, idx) => {
+                        if (segment.mode !== "plane") return null;
+                        
+                        const fromCoords = getLocationCoordinates(segment.from);
+                        const toCoords = getLocationCoordinates(segment.to);
+                        
+                        if (!fromCoords || !toCoords) return null;
+                        
+                        const curvedPath = createCurvedPath(fromCoords, toCoords, 0.5);
+                        const style = getRouteStyle(route, segment, mapOptions, isSelected);
+                        
+                        const eventHandlers: PolylineEventHandlers = {
+                          click: () => handleSelectRoute(route.id),
+                          mouseover: (e) => {
+                            e.target.setStyle({ weight: style.weight + 2 });
+                          },
+                          mouseout: (e) => {
+                            e.target.setStyle({ weight: style.weight });
+                          }
+                        };
+                        
+                        return (
+                          <Polyline 
+                            key={`${route.id}-segment-${idx}`}
+                            positions={curvedPath}
+                            pathOptions={style}
+                            eventHandlers={eventHandlers}
+                          >
+                            <Tooltip sticky>
+                              <div className="text-xs">
+                                <strong>{segment.from} → {segment.to}</strong><br />
+                                Distance: {segment.distance} km<br />
+                                Mode: {segment.mode.charAt(0).toUpperCase() + segment.mode.slice(1)}<br />
+                                Cost: ${segment.cost.toLocaleString()}
+                              </div>
+                            </Tooltip>
+                          </Polyline>
+                        );
+                      });
+                    })}
+                  </LayersGroup>
+                </LayersControl.Overlay>
+                
+                <LayersControl.Overlay checked name="Sea Routes">
+                  <LayersGroup>
+                    {optimizationResult.routes.map((route) => {
+                      const isSelected = selectedRoute === route.id;
+                      
+                      // Skip non-sea routes
+                      if (!route.segments.some(s => s.mode === "ship")) {
+                        return null;
+                      }
+                      
+                      return route.segments.map((segment, idx) => {
+                        if (segment.mode !== "ship") return null;
+                        
+                        const fromCoords = getLocationCoordinates(segment.from);
+                        const toCoords = getLocationCoordinates(segment.to);
+                        
+                        if (!fromCoords || !toCoords) return null;
+                        
+                        const curvedPath = createCurvedPath(fromCoords, toCoords, -0.3);
+                        const style = getRouteStyle(route, segment, mapOptions, isSelected);
+                        
+                        const eventHandlers: PolylineEventHandlers = {
+                          click: () => handleSelectRoute(route.id),
+                          mouseover: (e) => {
+                            e.target.setStyle({ weight: style.weight + 2 });
+                          },
+                          mouseout: (e) => {
+                            e.target.setStyle({ weight: style.weight });
+                          }
+                        };
+                        
+                        return (
+                          <Polyline 
+                            key={`${route.id}-segment-${idx}`}
+                            positions={curvedPath}
+                            pathOptions={style}
+                            eventHandlers={eventHandlers}
+                          >
+                            <Tooltip sticky>
+                              <div className="text-xs">
+                                <strong>{segment.from} → {segment.to}</strong><br />
+                                Distance: {segment.distance} km<br />
+                                Mode: {segment.mode.charAt(0).toUpperCase() + segment.mode.slice(1)}<br />
+                                Cost: ${segment.cost.toLocaleString()}
+                              </div>
+                            </Tooltip>
+                          </Polyline>
+                        );
+                      });
+                    })}
+                  </LayersGroup>
                 </LayersControl.Overlay>
                 
                 <LayersControl.Overlay checked name="Locations">
                   <LayersGroup>
-                    {/* Get all unique locations from routes */}
-                    {(() => {
-                      const locations: Record<string, { 
-                        type: "origin" | "destination" | "hub",
-                        count: number
-                      }> = {};
+                    {/* Create markers for all locations */}
+                    {Object.entries(locationsData).map(([location, info]) => {
+                      const coords = getLocationCoordinates(location);
+                      if (!coords) return null;
                       
-                      optimizationResult.routes.forEach(route => {
-                        route.segments.forEach((segment, idx) => {
-                          // First segment from is origin
-                          if (idx === 0) {
-                            if (!locations[segment.from]) {
-                              locations[segment.from] = { type: "origin", count: 1 };
-                            } else {
-                              locations[segment.from].count++;
-                              // Keep as origin if already marked as such
-                              if (locations[segment.from].type !== "origin") {
-                                locations[segment.from].type = "hub";
-                              }
-                            }
-                          } else {
-                            // Middle segments are hubs
-                            if (!locations[segment.from]) {
-                              locations[segment.from] = { type: "hub", count: 1 };
-                            } else {
-                              locations[segment.from].count++;
-                            }
-                          }
-                          
-                          // Last segment to is destination
-                          if (idx === route.segments.length - 1) {
-                            if (!locations[segment.to]) {
-                              locations[segment.to] = { type: "destination", count: 1 };
-                            } else {
-                              locations[segment.to].count++;
-                              // Keep as destination if already marked as such
-                              if (locations[segment.to].type !== "destination") {
-                                locations[segment.to].type = "hub";
-                              }
-                            }
-                          } else {
-                            // Middle segments are hubs
-                            if (!locations[segment.to]) {
-                              locations[segment.to] = { type: "hub", count: 1 };
-                            } else {
-                              locations[segment.to].count++;
-                            }
-                          }
-                        });
-                      });
+                      // Get color based on type
+                      let color: string;
+                      switch (info.type) {
+                        case "origin":
+                          color = "#3b82f6"; // blue
+                          break;
+                        case "destination":
+                          color = "#ef4444"; // red
+                          break;
+                        case "hub":
+                          color = "#f59e0b"; // amber
+                          break;
+                        default:
+                          color = "#6b7280"; // gray
+                          break;
+                      }
                       
-                      return Object.entries(locations).map(([location, info]) => {
-                        const coords = getLocationCoordinates(location);
-                        if (!coords) return null;
-                        
-                        // Get color based on type
-                        let color: string;
-                        switch (info.type) {
-                          case "origin":
-                            color = "#3b82f6"; // blue
-                            break;
-                          case "destination":
-                            color = "#ef4444"; // red
-                            break;
-                          case "hub":
-                            color = "#f59e0b"; // amber
-                            break;
-                        }
-                        
-                        const icon = createCustomIcon(info.type, color);
-                        
-                        return (
-                          <Marker 
-                            key={location-${location}}
-                            position={[coords.lat, coords.lng]} 
-                            icon={icon}
-                          >
-                            <Popup>
-                              <div className="text-xs">
-                                <strong>{location}</strong><br />
-                                Type: {info.type.charAt(0).toUpperCase() + info.type.slice(1)}<br />
-                                Routes: {info.count}
-                              </div>
-                            </Popup>
-                          </Marker>
-                        );
-                      });
-                    })()}
+                      const icon = createCustomIcon(info.type, color);
+                      
+                      return (
+                        <Marker 
+                          key={`location-${location}`}
+                          position={[coords.lat, coords.lng]} 
+                          icon={icon}
+                        >
+                          <Popup>
+                            <div className="text-xs">
+                              <strong>{location}</strong><br />
+                              Type: {info.type.charAt(0).toUpperCase() + info.type.slice(1)}<br />
+                              Routes: {info.count}
+                            </div>
+                          </Popup>
+                        </Marker>
+                      );
+                    })}
                   </LayersGroup>
                 </LayersControl.Overlay>
               </LayersControl>
@@ -767,7 +813,11 @@ export const BatchRouteMap: FC<BatchRouteMapProps> = ({
                       variant="ghost" 
                       size="icon" 
                       className="h-8 w-8 text-white hover:bg-white/20"
-                      onClick={() => setMapBounds(mapBounds)}
+                      onClick={() => {
+                        if (mapBounds) {
+                          setMapKey(prev => prev + 1); // Force map remount to apply bounds
+                        }
+                      }}
                       title="Reset view"
                     >
                       <Layers className="h-4 w-4" />
@@ -784,11 +834,7 @@ export const BatchRouteMap: FC<BatchRouteMapProps> = ({
                       variant="ghost" 
                       size="icon" 
                       className="h-8 w-8 text-white hover:bg-white/20"
-                      onClick={() => {
-                        const map = document.querySelector('.leaflet-container')
-                          ._leaflet_map;
-                        map.zoomIn();
-                      }}
+                      onClick={() => safelyZoomMap('zoomIn')}
                       title="Zoom in"
                     >
                       <Plus className="h-4 w-4" />
@@ -797,11 +843,7 @@ export const BatchRouteMap: FC<BatchRouteMapProps> = ({
                       variant="ghost" 
                       size="icon" 
                       className="h-8 w-8 text-white hover:bg-white/20"
-                      onClick={() => {
-                        const map = document.querySelector('.leaflet-container')
-                          ._leaflet_map;
-                        map.zoomOut();
-                      }}
+                      onClick={() => safelyZoomMap('zoomOut')}
                       title="Zoom out"
                     >
                       <Minus className="h-4 w-4" />
@@ -925,45 +967,51 @@ export const BatchRouteMap: FC<BatchRouteMapProps> = ({
         
         {/* Legend and quick stats */}
         <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-          <><div className="bg-white/5 rounded-lg p-3 border border-white/10">
-                <div className="flex justify-between">
-                    <div>
-                        <p className="text-xs text-blue-200/50">TOTAL ROUTES</p>
-                        <p className="text-xl font-bold">{optimizationResult.routes.length}</p>
-                    </div>
-                    <FileBarChart className="h-8 w-8 text-blue-400/30" />
-                </div>
-            </div><div className="bg-white/5 rounded-lg p-3 border border-white/10">
-                    <div className="flex justify-between">
-                        <div>
-                            <p className="text-xs text-blue-200/50">TOTAL SHIPMENTS</p>
-                            <p className="text-xl font-bold">{optimizationResult.totalShipments}</p>
-                        </div>
-                        <Package className="h-8 w-8 text-blue-400/30" />
-                    </div>
-                </div><div className="bg-white/5 rounded-lg p-3 border border-white/10">
-                    <div className="flex justify-between">
-                        <div>
-                            <p className="text-xs text-blue-200/50">DISTANCE COVERED</p>
-                            <p className="text-xl font-bold">{(optimizationResult.totalDistance / 1000).toFixed(1)}K km</p>
-                        </div>
-                        <MapPin className="h-8 w-8 text-blue-400/30" />
-                    </div>
-                </div><div className="bg-white/5 rounded-lg p-3 border border-white/10">
-                    <div className="flex justify-between">
-                        <div>
-                            <p className="text-xs text-blue-200/50">COST SAVINGS</p>
-                            <p className="text-xl font-bold">${optimizationResult.costSavings.toLocaleString()}</p>
-                        </div>
-                        <DollarSign className="h-8 w-8 text-green-400/30" />
-                    </div>
-                </div></>
+          <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+            <div className="flex justify-between">
+              <div>
+                <p className="text-xs text-blue-200/50">TOTAL ROUTES</p>
+                <p className="text-xl font-bold">{optimizationResult.routes.length}</p>
+              </div>
+              <FileBarChart className="h-8 w-8 text-blue-400/30" />
+            </div>
+          </div>
+          
+          <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+            <div className="flex justify-between">
+              <div>
+                <p className="text-xs text-blue-200/50">TOTAL SHIPMENTS</p>
+                <p className="text-xl font-bold">{optimizationResult.totalShipments}</p>
+              </div>
+              <Package className="h-8 w-8 text-blue-400/30" />
+            </div>
+          </div>
+          
+          <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+            <div className="flex justify-between">
+              <div>
+                <p className="text-xs text-blue-200/50">DISTANCE COVERED</p>
+                <p className="text-xl font-bold">{(optimizationResult.totalDistance / 1000).toFixed(1)}K km</p>
+              </div>
+              <MapPin className="h-8 w-8 text-blue-400/30" />
+            </div>
+          </div>
+          
+          <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+            <div className="flex justify-between">
+              <div>
+                <p className="text-xs text-blue-200/50">COST SAVINGS</p>
+                <p className="text-xl font-bold">${optimizationResult.costSavings.toLocaleString()}</p>
+              </div>
+              <DollarSign className="h-8 w-8 text-green-400/30" />
+            </div>
+          </div>
         </div>
       </div>
       
       {/* Side panel */}
       <div className="rounded-xl border border-white/10 bg-[#020617]/80 backdrop-blur-md shadow-lg overflow-hidden">
-        <Tabs defaultValue="routes" className="w-full" onValueChange={(value) => setInfoPanel(value as any)}>
+        <Tabs defaultValue="routes" className="w-full" onValueChange={(value) => setInfoPanel(value as "routes" | "metrics" | "help")}>
           <div className="border-b border-white/10">
             <TabsList className="w-full h-12 bg-transparent">
               <TabsTrigger 
@@ -1029,16 +1077,16 @@ export const BatchRouteMap: FC<BatchRouteMapProps> = ({
                     return (
                       <motion.div
                         key={route.id}
-                        className={rounded-xl border ${isSelected ? 'border-blue-500/50' : 'border-white/10'} overflow-hidden cursor-pointer}
+                        className={`rounded-xl border ${isSelected ? 'border-blue-500/50' : 'border-white/10'} overflow-hidden cursor-pointer`}
                         whileHover={{ y: -2, boxShadow: "0 4px 20px rgba(0, 0, 0, 0.15)" }}
                         onClick={() => handleSelectRoute(route.id)}
                       >
-                        <div className={p-3 ${isSelected ? 'bg-blue-900/20' : 'bg-white/5'}}>
+                        <div className={`p-3 ${isSelected ? 'bg-blue-900/20' : 'bg-white/5'}`}>
                           <div className="flex justify-between items-center">
                             <div className="flex items-center gap-3">
                               <div 
                                 className="rounded-full h-10 w-10 flex items-center justify-center" 
-                                style={{ backgroundColor: ${modeInfo.color}20 }}
+                                style={{ backgroundColor: `${modeInfo.color}20` }}
                               >
                                 {modeInfo.icon}
                               </div>
@@ -1087,20 +1135,21 @@ export const BatchRouteMap: FC<BatchRouteMapProps> = ({
                               {route.segments.map((segment, idx) => {
                                 const { icon, color } = getTransportModeInfo(segment.mode);
                                 return (
-                                  <><div key={idx} className="flex items-start gap-3 text-xs p-2 rounded-lg bg-white/5">
-                                        <div
-                                            className="mt-0.5 rounded-full h-4 w-4 flex-shrink-0 flex items-center justify-center"
-                                            style={{ backgroundColor: $ }} {...color} />30 }}
-                                        >
-                                        {icon}
-                                    </div><div className="flex-1 min-w-0">
-                                            <p className="font-medium text-white truncate">
-                                                {segment.from} → {segment.to}
-                                            </p>
-                                            <p className="text-blue-200/60 text-xs">
-                                                {segment.distance.toLocaleString()} km • {segment.time.toFixed(1)} h • ${segment.cost.toLocaleString()}
-                                            </p>
-                                        </div></>
+                                  <div key={idx} className="flex items-start gap-3 text-xs p-2 rounded-lg bg-white/5">
+                                    <div 
+                                      className="mt-0.5 rounded-full h-4 w-4 flex-shrink-0 flex items-center justify-center" 
+                                      style={{ backgroundColor: `${color}30` }}
+                                    >
+                                      {icon}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="font-medium text-white truncate">
+                                        {segment.from} → {segment.to}
+                                      </p>
+                                      <p className="text-blue-200/60 text-xs">
+                                        {segment.distance.toLocaleString()} km • {segment.time.toFixed(1)} h • ${segment.cost.toLocaleString()}
+                                      </p>
+                                    </div>
                                   </div>
                                 );
                               })}
@@ -1137,190 +1186,190 @@ export const BatchRouteMap: FC<BatchRouteMapProps> = ({
             
             {/* Metrics panel */}
             <TabsContent value="metrics" className="m-0">
-              <><div className="flex justify-between items-center p-4 border-b border-white/10">
-                    <h3 className="text-lg font-medium">Optimization Metrics</h3>
-                    <Badge variant="outline" className="bg-blue-500/10 text-blue-300 border-blue-300/30">
-                        Summary
-                    </Badge>
-                </div><ScrollArea className="h-[500px]">
-                        <div className="p-4 space-y-6">
-                            {/* Summary cards */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <Card className="bg-transparent border-white/10">
-                                    <CardHeader className="p-4 pb-2">
-                                        <CardTitle className="text-sm font-medium flex items-center gap-2">
-                                            <DollarSign className="h-4 w-4 text-green-400" />
-                                            <span>Cost Savings</span>
-                                        </CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="p-4 pt-0">
-                                        <p className="text-2xl font-bold">${optimizationResult.costSavings.toLocaleString()}</p>
-                                        <p className="text-xs text-blue-200/60">Compared to individual shipping</p>
-                                    </CardContent>
-                                </Card>
-
-                                <Card className="bg-transparent border-white/10">
-                                    <CardHeader className="p-4 pb-2">
-                                        <CardTitle className="text-sm font-medium flex items-center gap-2">
-                                            <Leaf className="h-4 w-4 text-green-400" />
-                                            <span>CO₂ Reduction</span>
-                                        </CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="p-4 pt-0">
-                                        <p className="text-2xl font-bold">{optimizationResult.co2Savings.toLocaleString()} kg</p>
-                                        <p className="text-xs text-blue-200/60">Environmental impact reduction</p>
-                                    </CardContent>
-                                </Card>
-                            </div>
-
-                            {/* Route type metrics */}
+              <div className="flex justify-between items-center p-4 border-b border-white/10">
+                <h3 className="text-lg font-medium">Optimization Metrics</h3>
+                <Badge variant="outline" className="bg-blue-500/10 text-blue-300 border-blue-300/30">
+                  Summary
+                </Badge>
+              </div>
+              
+              <ScrollArea className="h-[500px]">
+                <div className="p-4 space-y-6">
+                  {/* Summary cards */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <Card className="bg-transparent border-white/10">
+                      <CardHeader className="p-4 pb-2">
+                        <CardTitle className="text-sm font-medium flex items-center gap-2">
+                          <DollarSign className="h-4 w-4 text-green-400" />
+                          <span>Cost Savings</span>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="p-4 pt-0">
+                        <p className="text-2xl font-bold">${optimizationResult.costSavings.toLocaleString()}</p>
+                        <p className="text-xs text-blue-200/60">Compared to individual shipping</p>
+                      </CardContent>
+                    </Card>
+                    
+                    <Card className="bg-transparent border-white/10">
+                      <CardHeader className="p-4 pb-2">
+                        <CardTitle className="text-sm font-medium flex items-center gap-2">
+                          <Leaf className="h-4 w-4 text-green-400" />
+                          <span>CO₂ Reduction</span>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="p-4 pt-0">
+                        <p className="text-2xl font-bold">{optimizationResult.co2Savings.toLocaleString()} kg</p>
+                        <p className="text-xs text-blue-200/60">Environmental impact reduction</p>
+                      </CardContent>
+                    </Card>
+                  </div>
+                  
+                  {/* Route type metrics */}
+                  <div>
+                    <h4 className="text-sm font-medium mb-3">Route Metrics</h4>
+                    
+                    <div className="space-y-4">
+                      <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                            <ArrowRightCircle className="h-4 w-4 text-purple-400" />
                             <div>
-                                <h4 className="text-sm font-medium mb-3">Route Metrics</h4>
-
-                                <div className="space-y-4">
-                                    <div className="bg-white/5 rounded-lg p-3 border border-white/10">
-                                        <div className="flex justify-between items-center">
-                                            <div className="flex items-center gap-2">
-                                                <ArrowRightCircle className="h-4 w-4 text-purple-400" />
-                                                <div>
-                                                    <p className="text-sm font-medium">Multi-modal Routes</p>
-                                                    <p className="text-xs text-blue-200/60">Combined transport methods</p>
-                                                </div>
-                                            </div>
-                                            <div className="text-right">
-                                                <p className="text-lg font-bold">{multiModalCount}</p>
-                                                <p className="text-xs text-blue-200/60">
-                                                    {((multiModalCount / optimizationResult.routes.length) * 100).toFixed(0)}% of total
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="bg-white/5 rounded-lg p-3 border border-white/10">
-                                        <div className="flex justify-between items-center">
-                                            <div className="flex items-center gap-2">
-                                                <ArrowRightCircle className="h-4 w-4 text-green-400" />
-                                                <div>
-                                                    <p className="text-sm font-medium">Backhaul Optimization</p>
-                                                    <p className="text-xs text-blue-200/60">Return capacity utilization</p>
-                                                </div>
-                                            </div>
-                                            <div className="text-right">
-                                                <p className="text-lg font-bold">{backhaulCount}</p>
-                                                <p className="text-xs text-blue-200/60">
-                                                    {((backhaulCount / optimizationResult.routes.length) * 100).toFixed(0)}% of total
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="bg-white/5 rounded-lg p-3 border border-white/10">
-                                        <div className="flex justify-between items-center">
-                                            <div className="flex items-center gap-2">
-                                                <ArrowRightCircle className="h-4 w-4 text-blue-400" />
-                                                <div>
-                                                    <p className="text-sm font-medium">Geographic Clusters</p>
-                                                    <p className="text-xs text-blue-200/60">Grouped by destination proximity</p>
-                                                </div>
-                                            </div>
-                                            <div className="text-right">
-                                                <p className="text-lg font-bold">{optimizationResult.clusterCount}</p>
-                                                <p className="text-xs text-blue-200/60">
-                                                    Avg. {(optimizationResult.totalShipments / optimizationResult.clusterCount).toFixed(1)} shipments per cluster
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+                              <p className="text-sm font-medium">Multi-modal Routes</p>
+                              <p className="text-xs text-blue-200/60">Combined transport methods</p>
                             </div>
-
-                            {/* Transport mode breakdown */}
-                            <div>
-                                <h4 className="text-sm font-medium mb-3">Transport Mode Breakdown</h4>
-
-                                <div className="space-y-3">
-                                    <div>
-                                        <div className="flex justify-between text-xs mb-1">
-                                            <span className="text-blue-200/80 flex items-center gap-1">
-                                                <Truck className="h-3 w-3" /> Truck Routes
-                                            </span>
-                                            <span>{routesByMode.truck.length} routes</span>
-                                        </div>
-                                        <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                                            <div
-                                                className="h-full bg-blue-500"
-                                                style={{
-                                                    width: $
-                                                }} {...(routesByMode.truck.length / optimizationResult.routes.length) * 100} />%
-                                            }}
-                                            ></div>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <div className="flex justify-between text-xs mb-1">
-                                        <span className="text-blue-200/80 flex items-center gap-1">
-                                            <Plane className="h-3 w-3" /> Air Routes
-                                        </span>
-                                        <span>{routesByMode.plane.length} routes</span>
-                                    </div>
-                                    <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                                        <div
-                                            className="h-full bg-purple-500"
-                                            style={{
-                                                width: $
-                                            }} {...(routesByMode.plane.length / optimizationResult.routes.length) * 100} />%
-                                        }}
-                                        ></div>
-                                </div>
-                            </div>
-
-                            <div>
-                                <div className="flex justify-between text-xs mb-1">
-                                    <span className="text-blue-200/80 flex items-center gap-1">
-                                        <Ship className="h-3 w-3" /> Sea Routes
-                                    </span>
-                                    <span>{routesByMode.ship.length} routes</span>
-                                </div>
-                                <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                                    <div
-                                        className="h-full bg-green-500"
-                                        style={{
-                                            width: $
-                                        }} {...(routesByMode.ship.length / optimizationResult.routes.length) * 100} />%
-                                    }}
-                                    ></div>
-                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-lg font-bold">{multiModalCount}</p>
+                            <p className="text-xs text-blue-200/60">
+                              {((multiModalCount / optimizationResult.routes.length) * 100).toFixed(0)}% of total
+                            </p>
+                          </div>
                         </div>
-                    </div></>
+                      </div>
+                      
+                      <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                            <ArrowRightCircle className="h-4 w-4 text-green-400" />
+                            <div>
+                              <p className="text-sm font-medium">Backhaul Optimization</p>
+                              <p className="text-xs text-blue-200/60">Return capacity utilization</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-lg font-bold">{backhaulCount}</p>
+                            <p className="text-xs text-blue-200/60">
+                              {((backhaulCount / optimizationResult.routes.length) * 100).toFixed(0)}% of total
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                            <ArrowRightCircle className="h-4 w-4 text-blue-400" />
+                            <div>
+                              <p className="text-sm font-medium">Geographic Clusters</p>
+                              <p className="text-xs text-blue-200/60">Grouped by destination proximity</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-lg font-bold">{optimizationResult.clusterCount}</p>
+                            <p className="text-xs text-blue-200/60">
+                              Avg. {(optimizationResult.totalShipments / optimizationResult.clusterCount).toFixed(1)} shipments per cluster
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Transport mode breakdown */}
+                  <div>
+                    <h4 className="text-sm font-medium mb-3">Transport Mode Breakdown</h4>
+                    
+                    <div className="space-y-3">
+                      <div>
+                        <div className="flex justify-between text-xs mb-1">
+                          <span className="text-blue-200/80 flex items-center gap-1">
+                            <Truck className="h-3 w-3" /> Truck Routes
+                          </span>
+                          <span>{routesByMode.truck.length} routes</span>
+                        </div>
+                        <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-blue-500" 
+                            style={{ 
+                              width: `${(routesByMode.truck.length / optimizationResult.routes.length) * 100}%` 
+                            }}
+                          ></div>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <div className="flex justify-between text-xs mb-1">
+                          <span className="text-blue-200/80 flex items-center gap-1">
+                            <Plane className="h-3 w-3" /> Air Routes
+                          </span>
+                          <span>{routesByMode.plane.length} routes</span>
+                        </div>
+                        <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-purple-500" 
+                            style={{ 
+                              width: `${(routesByMode.plane.length / optimizationResult.routes.length) * 100}%` 
+                            }}
+                          ></div>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <div className="flex justify-between text-xs mb-1">
+                          <span className="text-blue-200/80 flex items-center gap-1">
+                            <Ship className="h-3 w-3" /> Sea Routes
+                          </span>
+                          <span>{routesByMode.ship.length} routes</span>
+                        </div>
+                        <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-green-500" 
+                            style={{ 
+                              width: `${(routesByMode.ship.length / optimizationResult.routes.length) * 100}%` 
+                            }}
+                          ></div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                   
                   {/* Cost breakdown */}
                   <div>
-                    <><h4 className="text-sm font-medium mb-2">Cost Breakdown</h4><div className="bg-white/5 rounded-lg p-3 border border-white/10">
-                          <div className="flex justify-between mb-2">
-                              <span className="text-xs text-blue-200/80">Total Transport Cost</span>
-                              <span className="text-xs font-medium">${optimizationResult.totalCost.toLocaleString()}</span>
-                          </div>
-                          <div className="flex justify-between mb-2">
-                              <span className="text-xs text-blue-200/80">Average Cost per Route</span>
-                              <span className="text-xs font-medium">
-                                  ${(optimizationResult.totalCost / optimizationResult.routes.length).toLocaleString()}
-                              </span>
-                          </div>
-                          <div className="flex justify-between mb-2">
-                              <span className="text-xs text-blue-200/80">Average Cost per Shipment</span>
-                              <span className="text-xs font-medium">
-                                  ${(optimizationResult.totalCost / optimizationResult.totalShipments).toLocaleString()}
-                              </span>
-                          </div>
-                          <div className="flex justify-between">
-                              <span className="text-xs text-blue-200/80">Cost per km</span>
-                              <span className="text-xs font-medium">
-                                  ${(optimizationResult.totalCost / optimizationResult.totalDistance).toFixed(2)}
-                              </span>
-                          </div>
-                      </div></>
+                    <h4 className="text-sm font-medium mb-2">Cost Breakdown</h4>
+                    <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+                      <div className="flex justify-between mb-2">
+                        <span className="text-xs text-blue-200/80">Total Transport Cost</span>
+                        <span className="text-xs font-medium">${optimizationResult.totalCost.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between mb-2">
+                        <span className="text-xs text-blue-200/80">Average Cost per Route</span>
+                        <span className="text-xs font-medium">
+                          ${(optimizationResult.totalCost / optimizationResult.routes.length).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex justify-between mb-2">
+                        <span className="text-xs text-blue-200/80">Average Cost per Shipment</span>
+                        <span className="text-xs font-medium">
+                          ${(optimizationResult.totalCost / optimizationResult.totalShipments).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-xs text-blue-200/80">Cost per km</span>
+                        <span className="text-xs font-medium">
+                          ${(optimizationResult.totalCost / optimizationResult.totalDistance).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                   
                   <div className="pt-3 border-t border-white/10 text-xs text-blue-200/60 flex justify-between">
@@ -1335,45 +1384,137 @@ export const BatchRouteMap: FC<BatchRouteMapProps> = ({
             
             {/* Help panel */}
             <TabsContent value="help" className="m-0">
-              <><div className="flex justify-between items-center p-4 border-b border-white/10">
-                    <h3 className="text-lg font-medium">Help & Information</h3>
-                    <Badge variant="outline" className="bg-blue-500/10 text-blue-300 border-blue-300/30">
-                        Guide
-                    </Badge>
-                </div><ScrollArea className="h-[500px]">
-                        <div className="p-4 space-y-6">
-                            <div>
-                                <h4 className="text-sm font-medium mb-2">Route Optimization</h4>
-                                <p className="text-xs text-blue-200/80 leading-relaxed">
-                                    Our advanced algorithm optimizes shipment routing by clustering deliveries,
-                                    selecting the most efficient transport modes, and ensuring vehicles don't return empty.
-                                </p>
-                            </div>
-
-                            <div className="space-y-3">
-                                <h4 className="text-sm font-medium">Map Legend</h4>
-
-                                <div className="bg-white/5 rounded-lg p-3 border border-white/10">
-                                    <h5 className="text-xs font-medium mb-2">Route Types</h5>
-                                    <div className="space-y-2">
-                                        <div className="flex items-center gap-2">
-                                            <div className="h-3 w-6 bg-blue-500 rounded-full"></div>
-                                            <span className="text-xs text-blue-200/80">Truck routes</span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <div className="h-3 w-6 bg-purple-500 rounded-full"></div>
-                                            <span className="text-xs text-blue-200/80">Air routes</span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <div className="h-3 w-6 bg-green-500 rounded-full"></div>
-                                            <span className="text-xs text-blue-200/80">Sea routes</span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <div className="h-3 w-6 bg-purple-500 rounded-full"
-                                                style={{ backgroundImage: 'repeating-linear-gradient(to right, #8b5cf6, #8b5cf6 5px, transparent 5px, transparent 10px)' }}></div>
-                                            <span className="text-xs text-blue-200/80">Multi-modal routes</span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="bg-white/5 roun" /></></></></>
+              <div className="flex justify-between items-center p-4 border-b border-white/10">
+                <h3 className="text-lg font-medium">Help & Information</h3>
+                <Badge variant="outline" className="bg-blue-500/10 text-blue-300 border-blue-300/30">
+                  Guide
+                </Badge>
+              </div>
+              
+              <ScrollArea className="h-[500px]">
+                <div className="p-4 space-y-6">
+                  <div>
+                    <h4 className="text-sm font-medium mb-2">Route Optimization</h4>
+                    <p className="text-xs text-blue-200/80 leading-relaxed">
+                      Our advanced algorithm optimizes shipment routing by clustering deliveries, 
+                      selecting the most efficient transport modes, and ensuring vehicles don't return empty.
+                    </p>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-medium">Map Legend</h4>
+                    
+                    <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+                      <h5 className="text-xs font-medium mb-2">Route Types</h5>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <div className="h-3 w-6 bg-blue-500 rounded-full"></div>
+                          <span className="text-xs text-blue-200/80">Truck routes</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="h-3 w-6 bg-purple-500 rounded-full"></div>
+                          <span className="text-xs text-blue-200/80">Air routes</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="h-3 w-6 bg-green-500 rounded-full"></div>
+                          <span className="text-xs text-blue-200/80">Sea routes</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="h-3 w-6 bg-purple-500 rounded-full" 
+                            style={{ backgroundImage: 'repeating-linear-gradient(to right, #8b5cf6, #8b5cf6 5px, transparent 5px, transparent 10px)' }}></div>
+                          <span className="text-xs text-blue-200/80">Multi-modal routes</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+                      <h5 className="text-xs font-medium mb-2">Location Markers</h5>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <div className="h-4 w-4 rounded-full bg-blue-500"></div>
+                          <span className="text-xs text-blue-200/80">Origin locations</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="h-4 w-4 rounded-full bg-red-500"></div>
+                          <span className="text-xs text-blue-200/80">Destination locations</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="h-4 w-4 rounded-full bg-amber-500"></div>
+                          <span className="text-xs text-blue-200/80">Transit hubs</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <h4 className="text-sm font-medium mb-2">Batch Optimization Features</h4>
+                    <div className="space-y-2">
+                      <div className="flex items-start gap-2">
+                        <ArrowRight className="h-3 w-3 text-blue-400 mt-1 flex-shrink-0" />
+                        <p className="text-xs text-blue-200/80">
+                          <span className="font-medium">Geographic Clustering:</span> Shipments to similar 
+                          destinations are grouped to reduce transportation costs.
+                        </p>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <ArrowRight className="h-3 w-3 text-blue-400 mt-1 flex-shrink-0" />
+                        <p className="text-xs text-blue-200/80">
+                          <span className="font-medium">Bin Packing:</span> Optimally allocates shipments to 
+                          vehicles based on weight and volume constraints.
+                        </p>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <ArrowRight className="h-3 w-3 text-blue-400 mt-1 flex-shrink-0" />
+                        <p className="text-xs text-blue-200/80">
+                          <span className="font-medium">Multi-modal Routing:</span> Combines different transport 
+                          modes (truck, air, sea) for cost-effective delivery.
+                        </p>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <ArrowRight className="h-3 w-3 text-blue-400 mt-1 flex-shrink-0" />
+                        <p className="text-xs text-blue-200/80">
+                          <span className="font-medium">Backhaul Optimization:</span> Vehicles returning from 
+                          deliveries are loaded with new shipments to maximize efficiency.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <h4 className="text-sm font-medium mb-2">How to Use</h4>
+                    <div className="space-y-2">
+                      <div className="flex items-start gap-2">
+                        <div className="h-4 w-4 rounded-full bg-blue-500 text-white text-[10px] flex items-center justify-center flex-shrink-0 mt-0.5">1</div>
+                        <p className="text-xs text-blue-200/80">
+                          Click on routes in the list to see detailed information and highlight them on the map.
+                        </p>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <div className="h-4 w-4 rounded-full bg-blue-500 text-white text-[10px] flex items-center justify-center flex-shrink-0 mt-0.5">2</div>
+                        <p className="text-xs text-blue-200/80">
+                          Use the filter button in the top-left of the map to customize the display options.
+                        </p>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <div className="h-4 w-4 rounded-full bg-blue-500 text-white text-[10px] flex items-center justify-center flex-shrink-0 mt-0.5">3</div>
+                        <p className="text-xs text-blue-200/80">
+                          Check the "Metrics" tab to view detailed cost and efficiency statistics.
+                        </p>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <div className="h-4 w-4 rounded-full bg-blue-500 text-white text-[10px] flex items-center justify-center flex-shrink-0 mt-0.5">4</div>
+                        <p className="text-xs text-blue-200/80">
+                          Click on map routes and markers for interactive information about locations and connections.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </ScrollArea>
+            </TabsContent>
+          </div>
+        </Tabs>
+      </div>
+    </div>
+  );
+};
