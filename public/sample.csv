@@ -1,26 +1,51 @@
 origin,destination,weight,dimensions,description,priority,deadline,fragile,hazardous
-Los Angeles, USA,New York, USA,450,50x40x30,Electronics,high,2023-12-25,true,false
-New York, USA,London, UK,1200,120x80x75,Machinery parts,medium,2023-12-30,false,false
-Los Angeles, USA,Tokyo, Japan,850,90x60x40,Medical supplies,high,2023-12-20,true,false
-New York, USA,Mumbai, India,1500,100x80x60,Industrial equipment,medium,2024-01-15,false,false
-London, UK,Singapore,720,85x55x45,Fashion merchandise,low,2024-01-10,false,false
-Tokyo, Japan,Sydney, Australia,950,110x70x50,Automotive parts,medium,2024-01-05,false,true
-Shanghai, China,Frankfurt, Germany,1100,130x90x70,Consumer electronics,high,2023-12-28,true,false
-Dubai, UAE,São Paulo, Brazil,1300,140x95x80,Oil equipment,medium,2024-01-20,false,true
-Mexico City, Mexico,Madrid, Spain,680,75x50x40,Textiles,low,2024-01-25,false,false
-Hong Kong,Paris, France,790,85x60x50,Luxury goods,high,2023-12-22,true,false
-Toronto, Canada,Delhi, India,980,100x70x60,Agricultural machinery,medium,2024-01-18,false,false
-Seoul, South Korea,Moscow, Russia,1050,120x80x70,Electronics components,medium,2024-01-12,true,false
-Bangkok, Thailand,Cairo, Egypt,870,95x65x55,Food products,high,2023-12-18,false,false
-Jakarta, Indonesia,Amsterdam, Netherlands,1150,130x85x75,Furniture,low,2024-01-28,false,false
-Los Angeles, USA,Delhi, India,920,100x70x60,Computer equipment,high,2023-12-15,true,false
-London, UK,New York, USA,1080,115x75x65,Pharmaceutical products,high,2023-12-17,false,false
-Singapore,Sydney, Australia,690,80x52x42,Consumer goods,medium,2024-01-08,false,false
-Frankfurt, Germany,Tokyo, Japan,1250,135x88x76,Automotive equipment,medium,2024-01-14,false,false
-Mumbai, India,Dubai, UAE,830,90x62x48,Textiles,low,2024-01-22,false,false
-New York, USA,São Paulo, Brazil,980,105x72x58,Industrial machinery,medium,2024-01-16,false,true
-Los Angeles, USA,London, UK,1350,142x94x82,Aerospace parts,high,2023-12-19,true,false
-Shanghai, China,Los Angeles, USA,1100,120x78x68,Electronics,high,2023-12-23,true,false
-Amsterdam, Netherlands,Hong Kong,950,102x68x54,Medical devices,high,2023-12-21,true,false
-New York, USA,Moscow, Russia,870,92x64x50,Books and publications,low,2024-01-30,false,false
-Paris, France,Dubai, UAE,760,85x58x44,Fashion items,medium,2024-01-12,false,false
+
+"Los Angeles, USA","New York, USA",450,50x40x30,Electronics,high,2023-12-25,true,false
+
+"New York, USA","London, UK",1200,120x80x75,"Machinery parts",medium,2023-12-30,false,false
+
+"Los Angeles, USA","Tokyo, Japan",850,90x60x40,"Medical supplies",high,2023-12-20,true,false
+
+"New York, USA","Mumbai, India",1500,100x80x60,"Industrial equipment",medium,2024-01-15,false,false
+
+"London, UK",Singapore,720,85x55x45,"Fashion merchandise",low,2024-01-10,false,false
+
+"Tokyo, Japan","Sydney, Australia",950,110x70x50,"Automotive parts",medium,2024-01-05,false,true
+
+"Shanghai, China","Frankfurt, Germany",1100,130x90x70,"Consumer electronics",high,2023-12-28,true,false
+
+"Dubai, UAE","São Paulo, Brazil",1300,140x95x80,"Oil equipment",medium,2024-01-20,false,true
+
+"Mexico City, Mexico","Madrid, Spain",680,75x50x40,Textiles,low,2024-01-25,false,false
+
+"Hong Kong","Paris, France",790,85x60x50,"Luxury goods",high,2023-12-22,true,false
+
+"Toronto, Canada","Delhi, India",980,100x70x60,"Agricultural machinery",medium,2024-01-18,false,false
+
+"Seoul, South Korea","Moscow, Russia",1050,120x80x70,"Electronics components",medium,2024-01-12,true,false
+
+"Bangkok, Thailand","Cairo, Egypt",870,95x65x55,"Food products",high,2023-12-18,false,false
+
+"Jakarta, Indonesia","Amsterdam, Netherlands",1150,130x85x75,Furniture,low,2024-01-28,false,false
+
+"Los Angeles, USA","Delhi, India",920,100x70x60,"Computer equipment",high,2023-12-15,true,false
+
+"London, UK","New York, USA",1080,115x75x65,"Pharmaceutical products",high,2023-12-17,false,false
+
+Singapore,"Sydney, Australia",690,80x52x42,"Consumer goods",medium,2024-01-08,false,false
+
+"Frankfurt, Germany","Tokyo, Japan",1250,135x88x76,"Automotive equipment",medium,2024-01-14,false,false
+
+"Mumbai, India","Dubai, UAE",830,90x62x48,Textiles,low,2024-01-22,false,false
+
+"New York, USA","São Paulo, Brazil",980,105x72x58,"Industrial machinery",medium,2024-01-16,false,true
+
+"Los Angeles, USA","London, UK",1350,142x94x82,"Aerospace parts",high,2023-12-19,true,false
+
+"Shanghai, China","Los Angeles, USA",1100,120x78x68,Electronics,high,2023-12-23,true,false
+
+"Amsterdam, Netherlands","Hong Kong",950,102x68x54,"Medical devices",high,2023-12-21,true,false
+
+"New York, USA","Moscow, Russia",870,92x64x50,"Books and publications",low,2024-01-30,false,false
+
+"Paris, France","Dubai, UAE",760,85x58x44,"Fashion items",medium,2024-01-12,false,false
