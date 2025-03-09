@@ -1,0 +1,100 @@
+/* Fix for Leaflet map in NextJS - prevent SSR issues */
+.leaflet-container {
+    height: 100%;
+    width: 100%;
+    z-index: 1;
+  }
+  
+  /* Hide routing container when not needed */
+  .leaflet-control-container .leaflet-routing-container-hide {
+    display: none;
+  }
+  
+  /* Override default leaflet marker styles */
+  .custom-div-icon {
+    background: transparent !important;
+    border: none !important;
+  }
+  
+  /* Make the popup more consistent with our theme */
+  .leaflet-popup-content-wrapper {
+    background-color: rgba(2, 6, 23, 0.9) !important;
+    color: white !important;
+    border-radius: 0.5rem !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    backdrop-filter: blur(12px) !important;
+  }
+  
+  .leaflet-popup-tip {
+    background-color: rgba(2, 6, 23, 0.9) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  }
+  
+  /* Style controls to match our theme */
+  .leaflet-touch .leaflet-bar,
+  .leaflet-touch .leaflet-control-layers {
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    background-clip: padding-box;
+  }
+  
+  .leaflet-touch .leaflet-bar a {
+    background-color: rgba(2, 6, 23, 0.8) !important;
+    color: white !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  }
+  
+  .leaflet-touch .leaflet-bar a:hover {
+    background-color: rgba(37, 99, 235, 0.5) !important;
+  }
+  
+  /* z-index override to ensure our map controls work correctly */
+  .z-overlay {
+    z-index: 1000;
+  }
+  
+  /* Fix leaflet attribution styling */
+  .leaflet-control-attribution {
+    background: rgba(2, 6, 23, 0.7) !important;
+    color: rgba(255, 255, 255, 0.5) !important;
+    backdrop-filter: blur(4px) !important;
+    font-size: 10px !important;
+    padding: 2px 8px !important;
+    border-radius: 4px !important;
+  }
+  
+  .leaflet-control-attribution a {
+    color: rgba(147, 197, 253, 0.8) !important;
+  }
+  
+  /* Fix for mobile interaction */
+  .leaflet-container {
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* Fix for border box in Tailwind */
+  .leaflet-container *,
+  .leaflet-container *:before,
+  .leaflet-container *:after {
+    box-sizing: content-box;
+  }
+  
+  /* Fix default SVG styles */
+  .leaflet-container svg {
+    width: auto;
+    height: auto;
+  }
+  
+  /* Fix Leaflet tiles in dark mode */
+  .leaflet-tile {
+    filter: brightness(0.8) invert(1) contrast(1.5) hue-rotate(200deg) saturate(0.8) brightness(0.8);
+  }
+  
+  /* Fix for loading overlay and zoom animations */
+  .leaflet-fade-anim .leaflet-tile {
+    will-change: opacity;
+  }
+  
+  .leaflet-zoom-anim .leaflet-zoom-animated {
+    will-change: transform;
+  }
