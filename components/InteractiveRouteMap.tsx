@@ -30,7 +30,7 @@ interface Coordinates {
 }
 
 interface RouteSegment {
-  mode: 'air' | 'sea' | 'land';
+  mode: 'air' | 'sea' | 'land' | 'road';
   origin: string;
   destination: string;
   distance_km: number;
@@ -560,7 +560,7 @@ export const RouteMap: FC<RouteMapProps> = ({ formData, onSelectRoute, onGoBack 
   }, [formData]);
 
   // Get icon for different transport modes
-  const getRouteIcon = (mode: 'air' | 'sea' | 'land'): ReactNode => {
+  const getRouteIcon = (mode: 'air' | 'sea' | 'land' | 'road'): ReactNode => {
     switch(mode) {
       case 'air': return <Plane className="h-4 w-4" />;
       case 'sea': return <Ship className="h-4 w-4" />;
