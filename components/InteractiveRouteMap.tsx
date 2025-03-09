@@ -222,51 +222,117 @@ const generateRouteData = (formData: FormData): RouteData => {
     reliability: "Medium"
   };
   
-  // Find an intermediate point for multimodal route
-  const intermediatePoint: Coordinates = { lat: 40.7128, lng: -74.0060 }; // New York
+// Function to calculate an appropriate intermediate point based on source and destination
+function calculateIntermediatePoint(source: Coordinates, dest: Coordinates): Coordinates {
+  // Calculate a point roughly halfway between source and destination
+  // with a slight offset to create a realistic transfer location
+  const midLat = (source.lat + dest.lat) / 2;
+  const midLng = (source.lng + dest.lng) / 2;
   
-  // Calculate distances for multimodal segments
-  const dist1 = calculateDistance(sourceCoords.lat, sourceCoords.lng, intermediatePoint.lat, intermediatePoint.lng);
-  const dist2 = calculateDistance(intermediatePoint.lat, intermediatePoint.lng, destCoords.lat, destCoords.lng);
+  // Add a small random offset (within 5-10% of the distance)
+  // to make the route more realistic and avoid a straight line
+  const latOffset = (dest.lat - source.lat) * (0.05 + Math.random() * 0.05);
+  const lngOffset = (dest.lng - source.lng) * (0.05 + Math.random() * 0.05);
   
-  // Generate multimodal route
-  const multimodalRoute: Route = {
-    route_name: "Multimodal Transport",
-    route_type: "multimodal",
-    color: "#8b5cf6", // purple
-    mode_icon: <ArrowRightLeft className="h-5 w-5 text-purple-400" />,
-    path: [
-      ...createCurvedRoute(sourceCoords, intermediatePoint, 0.3),
-      ...createCurvedRoute(intermediatePoint, destCoords, 0.3)
-    ],
-    segments: [
-      {
-        mode: "air",
-        origin: formData.pickup,
-        destination: "New York, USA",
-        distance_km: dist1,
-        transit_time_hours: Math.round(dist1 / 800 * 10) / 10,
-        cost_usd: Math.round(dist1 * 3),
-        co2_emissions_kg: Math.round(dist1 * 0.2)
-      },
-      {
-        mode: "sea",
-        origin: "New York, USA",
-        destination: formData.delivery,
-        distance_km: dist2,
-        transit_time_hours: Math.round(dist2 / 30 * 10) / 10,
-        cost_usd: Math.round(dist2 * 0.5),
-        co2_emissions_kg: Math.round(dist2 * 0.05)
-      }
-    ],
-    total_distance_km: dist1 + dist2,
-    total_transit_time_hours: Math.round(dist1 / 800 * 10) / 10 + Math.round(dist2 / 30 * 10) / 10,
-    total_cost_usd: Math.round(dist1 * 3) + Math.round(dist2 * 0.5),
-    total_co2_emissions_kg: Math.round(dist1 * 0.2) + Math.round(dist2 * 0.05),
-    perishability_suitability: "Medium",
-    risk_level: "Medium",
-    reliability: "High"
+  return {
+    lat: midLat + latOffset,
+    lng: midLng + lngOffset
   };
+}
+
+// Find a suitable name for the intermediate point
+function getIntermediateLocationName(point: Coordinates): string {
+  return "Transit Hub";
+}
+
+// Get city names for creating hub names
+const sourceCity = formData.pickup.split(',')[0].trim();
+const destCity = formData.delivery.split(',')[0].trim();
+
+// Source and destination local hubs
+const sourceCityHub = `${sourceCity} Transport Hub`;
+const destCityHub = `${destCity} Transport Hub`;
+
+// Calculate intermediate point for the main transport segment
+const intermediatePoint = calculateIntermediatePoint(sourceCoords, destCoords);
+const intermediateLocationName = getIntermediateLocationName(intermediatePoint);
+
+// Calculate distances for all segments
+// Local road distance at source (estimate 15km)
+const localSourceDist = 15;
+// Main transport distance
+const mainDist = calculateDistance(sourceCoords.lat, sourceCoords.lng, destCoords.lat, destCoords.lng);
+// Local road distance at destination (estimate 15km)
+const localDestDist = 15;
+
+// Create the multimodal route with three segments
+const multimodalRoute: Route = {
+  route_name: "Multimodal Transport",
+  route_type: "multimodal",
+  color: "#8b5cf6", // purple
+  mode_icon: <ArrowRightLeft className="h-5 w-5 text-purple-400" />,
+  path: [
+    ...createCurvedRoute(sourceCoords, intermediatePoint, 0.3),
+    ...createCurvedRoute(intermediatePoint, destCoords, 0.3)
+  ],
+  segments: [
+    {
+      mode: "road",
+      origin: formData.pickup,
+      destination: sourceCityHub,
+      distance_km: localSourceDist,
+      transit_time_hours: Math.round(localSourceDist / 40 * 10) / 10, // 40km/h average speed
+      cost_usd: Math.round(localSourceDist * 2), // $2 per km for road
+      co2_emissions_kg: Math.round(localSourceDist * 0.15) // 0.15kg CO2 per km for road
+    },
+    {
+      mode: "air",
+      origin: sourceCityHub,
+      destination: intermediateLocationName,
+      distance_km: Math.round(mainDist / 2),
+      transit_time_hours: Math.round((mainDist / 2) / 800 * 10) / 10, // 800km/h for air
+      cost_usd: Math.round((mainDist / 2) * 3), // $3 per km for air
+      co2_emissions_kg: Math.round((mainDist / 2) * 0.2) // 0.2kg CO2 per km for air
+    },
+    {
+      mode: "sea",
+      origin: intermediateLocationName,
+      destination: destCityHub,
+      distance_km: Math.round(mainDist / 2),
+      transit_time_hours: Math.round((mainDist / 2) / 30 * 10) / 10, // 30km/h for sea
+      cost_usd: Math.round((mainDist / 2) * 0.5), // $0.5 per km for sea
+      co2_emissions_kg: Math.round((mainDist / 2) * 0.05) // 0.05kg CO2 per km for sea
+    },
+    {
+      mode: "road",
+      origin: destCityHub,
+      destination: formData.delivery,
+      distance_km: localDestDist,
+      transit_time_hours: Math.round(localDestDist / 40 * 10) / 10, // 40km/h average speed
+      cost_usd: Math.round(localDestDist * 2), // $2 per km for road
+      co2_emissions_kg: Math.round(localDestDist * 0.15) // 0.15kg CO2 per km for road
+    }
+  ],
+  total_distance_km: localSourceDist + mainDist + localDestDist,
+  total_transit_time_hours: 
+    Math.round(localSourceDist / 40 * 10) / 10 + 
+    Math.round((mainDist / 2) / 800 * 10) / 10 + 
+    Math.round((mainDist / 2) / 30 * 10) / 10 + 
+    Math.round(localDestDist / 40 * 10) / 10,
+  total_cost_usd: 
+    Math.round(localSourceDist * 2) + 
+    Math.round((mainDist / 2) * 3) + 
+    Math.round((mainDist / 2) * 0.5) + 
+    Math.round(localDestDist * 2),
+  total_co2_emissions_kg: 
+    Math.round(localSourceDist * 0.15) + 
+    Math.round((mainDist / 2) * 0.2) + 
+    Math.round((mainDist / 2) * 0.05) + 
+    Math.round(localDestDist * 0.15),
+  perishability_suitability: "Medium",
+  risk_level: "Medium",
+  reliability: "High"
+};
   
   // Generate sustainable route
   const sustainableRoute: Route = {
